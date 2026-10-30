@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="bn">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Web to APK</title>
+<link href="https://fonts.googleapis.com/css2?family=Hind+Siliguri:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#eef3fb;--card:#fff;--ink:#14213d;--mute:#5d6b86;--line:#d5deee;--brand:#2f5bff;--brand-d:#1f43cc;--ok:#138a5b;--err:#c62b2b}
+*{box-sizing:border-box}
+body{margin:0;font-family:'Hind Siliguri',system-ui,sans-serif;background:var(--bg);color:var(--ink);line-height:1.6}
+.wrap{max-width:520px;margin:0 auto;padding:20px 16px 48px}
+h1{font-size:28px;margin:12px 0 4px;font-weight:700}
+.sub{color:var(--mute);margin:0 0 20px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:18px}
+label{display:block;font-weight:600;margin:14px 0 6px;font-size:15px}
+label:first-child{margin-top:0}
+input[type=text],input[type=url],select{width:100%;padding:12px 14px;border:1.5px solid var(--line);border-radius:10px;font:inherit;background:#fff;color:var(--ink)}
+input:focus,select:focus,button:focus-visible{outline:3px solid #b9c7ff;border-color:var(--brand)}
+.hint{font-size:13px;color:var(--mute);margin-top:4px}
+.row{display:flex;gap:12px}.row>div{flex:1}
+.icon-pick{display:flex;align-items:center;gap:14px}
+.icon-prev{width:64px;height:64px;border-radius:14px;border:1.5px dashed var(--line);background:#f6f8fd center/cover no-repeat;flex:none}
+.file-btn{padding:10px 14px;border:1.5px solid var(--brand);color:var(--brand);border-radius:10px;font-weight:600;cursor:pointer}
+.file-btn input{display:none}
+.check{display:flex;align-items:center;gap:10px;margin-top:14px;font-weight:500}
+.check input{width:20px;height:20px;accent-color:var(--brand)}
+.color{height:44px;width:100%;border:1.5px solid var(--line);border-radius:10px;padding:3px;background:#fff}
+button.go{width:100%;margin-top:20px;padding:14px;border:0;border-radius:12px;background:var(--brand);color:#fff;font:inherit;font-weight:700;font-size:17px;cursor:pointer}
+button.go:hover{background:var(--brand-d)}
+button.go:disabled{opacity:.6;cursor:wait}
+.bar{height:8px;background:#e3e9f6;border-radius:99px;overflow:hidden;margin-top:16px;display:none}
+.bar i{display:block;height:100%;width:0;background:var(--brand);transition:width .6s}
+#msg{margin-top:14px;font-weight:500;display:none;padding:12px 14px;border-radius:10px}
+#msg.err{display:block;background:#fdecec;color:var(--err)}
+#msg.info{display:block;background:#eaf0ff;color:var(--brand-d)}
+#msg.ok{display:block;background:#e5f6ee;color:var(--ok)}
+#msg a{display:inline-block;margin-top:8px;padding:10px 16px;background:var(--ok);color:#fff;border-radius:10px;text-decoration:none;font-weight:700}
+#msg small{font-weight:400}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Website theke APK</h1>
+  <p class="sub">Apnar website er URL din, app er naam din, APK tairi hoye jabe.</p>
+  <div class="card">
+    <label for="url">Website URL</label>
+    <input type="url" id="url" placeholder="https://example.com" inputmode="url" autocomplete="off">
+    <label for="name">App er naam</label>
+    <input type="text" id="name" placeholder="My App" maxlength="30">
+    <label for="pkg">Package name</label>
+    <input type="text" id="pkg" placeholder="com.example.myapp" autocapitalize="off" autocomplete="off">
+    <div class="hint">Auto toiri hobe. Chaile nijei likhte paren.</div>
+    <label>App icon</label>
+    <div class="icon-pick">
+      <div class="icon-prev" id="prev"></div>
+      <label class="file-btn" style="margin:0">Icon bachai korun
+        <input type="file" id="icon" accept="image/png">
+      </label>
+    </div>
+    <div class="hint">512x512 PNG hole best.</div>
+    <div class="row" style="margin-top:14px">
+      <div>
+        <label for="orient" style="margin-top:0">Screen</label>
+        <select id="orient">
+          <option value="portrait">Portrait</option>
+          <option value="landscape">Landscape</option>
+          <option value="any">Auto rotate</option>
+        </select>
+      </div>
+      <div>
+        <label for="color" style="margin-top:0">Status bar color</label>
+        <input type="color" id="color" class="color" value="#2f5bff">
+      </div>
+    </div>
+    <label class="check"><input type="checkbox" id="full"> Fullscreen (status bar lukao)</label>
+    <button class="go" id="go">APK banao</button>
+    <div class="bar" id="bar"><i></i></div>
+    <div id="msg" role="status" aria-live="polite"></div>
+  </div>
+</div>
+<script>
+const API_BASE = "https://web-to-apk-backend-s8hy.onrender.com";
+const KEY = "apk_job";
+const $ = id => document.getElementById(id);
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+let iconData = "";
+
+$("name").addEventListener("input", () => {
+  if ($("pkg").dataset.manual) return;
+  const slug = $("name").value.toLowerCase().replace(/[^a-z0-9]/g, "");
+  $("pkg").value = slug ? "com.webapk." + slug : "";
+});
+$("pkg").addEventListener("input", () => { $("pkg").dataset.manual = "1"; });
+
+$("icon").addEventListener("change", e => {
+  const f = e.target.files[0];
+  if (!f) return;
+  if (f.size > 2 * 1024 * 1024) return show("err", "Icon 2MB er choto hote hobe.");
+  const r = new FileReader();
+  r.onload = () => { iconData = r.result; $("prev").style.backgroundImage = `url(${iconData})`; };
+  r.readAsDataURL(f);
+});
+
+function show(type, html) { const m = $("msg"); m.className = type; m.innerHTML = html; }
+function progress(p) { $("bar").style.display = "block"; $("bar").firstElementChild.style.width = p + "%"; }
+function fmt(s) { return Math.floor(s / 60) + ":" + String(s % 60).padStart(2, "0"); }
+function store(v) { try { v ? localStorage.setItem(KEY, v) : localStorage.removeItem(KEY); } catch (e) {} }
+function end(type, html) {
+  store("");
+  $("go").disabled = false;
+  if (type === "err") $("bar").style.display = "none";
+  show(type, html);
+}
+
+function validate() {
+  let u = $("url").value.trim();
+  if (!u) return "Website URL din.";
+  if (!/^https?:\/\//i.test(u)) u = "https://" + u;
+  try { new URL(u); } catch { return "URL ta thik na."; }
+  $("url").value = u;
+  if (!$("name").value.trim()) return "App er naam din.";
+  if (!/^[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*)+$/.test($("pkg").value.trim()))
+    return "Package name thik na. Example: com.example.myapp";
+  return "";
+}
+
+async function track(id) {
+  const t0 = Date.now();
+  let fails = 0;
+  $("go").disabled = true;
+  while (true) {
+    const sec = Math.floor((Date.now() - t0) / 1000);
+    if (sec > 1500) return end("err", "Onek somoy lege gelo. Server er Logs dekhun, tarpor abar try korun.");
+    progress(Math.round(95 * (1 - Math.exp(-sec / 150))));
+    show("info", "Build cholche... " + fmt(sec) + "<br><small>Page bondho korben na. Prothom build e 5 theke 10 minute lagte pare.</small>");
+    let s;
+    try {
+      s = await (await fetch(API_BASE + "/api/status/" + id, { cache: "no-store" })).json();
+      fails = 0;
+    } catch (e) {
+      fails++;
+      if (fails >= 15) return end("err", "Server er sathe connection nai. Server restart hote pare, abar try korun.");
+      await sleep(3000);
+      continue;
+    }
+    if (s.status === "done") {
+      progress(100);
+      return end("ok", "APK ready!<br><a href=\"" + API_BASE + s.downloadUrl + "\" download>APK download korun</a>");
+    }
+    if (s.status === "failed") {
+      const m = s.error === "Job not found"
+        ? "Server restart hoyeche (memory shesh hote pare). Abar try korun."
+        : "Build fail: " + s.error;
+      return end("err", m);
+    }
+    await sleep(3000);
+  }
+}
+
+$("go").addEventListener("click", async () => {
+  const bad = validate();
+  if (bad) return show("err", bad);
+  const payload = {
+    url: $("url").value.trim(),
+    name: $("name").value.trim(),
+    package: $("pkg").value.trim(),
+    icon: iconData,
+    orientation: $("orient").value,
+    statusBarColor: $("color").value,
+    fullscreen: $("full").checked
+  };
+  $("go").disabled = true;
+  progress(3);
+  show("info", "Server er sathe connect hocche... (ghumiye thakle 1 minute lagte pare)");
+  try {
+    const res = await fetch(API_BASE + "/api/build", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload)
+    });
+    if (!res.ok) throw new Error("Server error " + res.status);
+    const { id } = await res.json();
+    store(id);
+    track(id);
+  } catch (e) {
+    end("err", "Server e request jay nai: " + e.message);
+  }
+});
+
+try {
+  const saved = localStorage.getItem(KEY);
+  if (saved) track(saved);
+} catch (e) {}
+</script>
+</body>
+</html>
